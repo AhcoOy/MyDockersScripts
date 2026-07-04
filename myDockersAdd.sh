@@ -15,13 +15,13 @@ unset _myDockersAddSource _myDockersAddDir
 ### add a new web container to an existing Docker LAMP project
 myDockersAdd() {
 
-    if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+    if [ $# -lt 2 ] || [ $# -gt 4 ]; then
         echo "Usage:"
-        echo "    myDockersAdd <Project> <SubProject> [PHP_IMAGE]"
+        echo "    myDockersAdd <Project> <SubProject> [PHP_IMAGE] [TEMPLATE]"
         echo
         echo "Example:"
         echo "    myDockersAdd moduledev prestashop82 php:8.2-apache"
-        echo "    myDockersAdd moduledev mysubproject"
+        echo "    myDockersAdd mylapp shop2 php:8.4-apache LAPP"
         return 1
     fi
 
@@ -30,12 +30,12 @@ myDockersAdd() {
 
     # Optional, default to the latest stable PHP Apache image
     local PHP_IMAGE="${3:-php:8.4-apache}"
+    local TEMPLATE_ARG="${4:-}"
     local PHP_ID
     PHP_ID=$(normalizePhpImage "$PHP_IMAGE")
 
     local ROOT="$HOME/MyDockers/$PROJECT"
     local COMPOSE="$ROOT/docker-compose.yml"
-    local TPL="$MYDOCKERS_TEMPLATE_DIR"
     local CONTAINER="${PROJECT}_${SUB_PROJECT}_web"
     local WEB_DIR="${PHP_ID}_${SUB_PROJECT}_web"
     local SRC_DIR="${PHP_ID}_${SUB_PROJECT}_src"
@@ -45,6 +45,44 @@ myDockersAdd() {
         echo "    $ROOT"
         return 1
     fi
+
+    # use the template set the project was created with;
+    # an explicit 4th parameter always wins and is remembered
+    local TEMPLATE
+    if [ -n "$TEMPLATE_ARG" ]; then
+        TEMPLATE="$TEMPLATE_ARG"
+    else
+        TEMPLATE=$(cat "$ROOT/.myDockersTemplate" 2>/dev/null)
+
+        if [ -z "$TEMPLATE" ]; then
+            # no marker: only a mariadb project can safely default to LAMP
+            if grep -q "_postgres_db" "$ROOT/docker-compose.yml" \
+                || ! grep -q "mariadb" "$ROOT/docker-compose.yml"; then
+                echo "Project $PROJECT is not a default LAMP setup, and has no"
+                echo ".myDockersTemplate marker. Give all 4 parameters explicitly:"
+                echo
+                echo "    myDockersAdd $PROJECT $SUB_PROJECT $PHP_IMAGE LAPP"
+                echo
+                echo "Available templates:"
+                ls -d "$MYDOCKERS_TEMPLATE_DIR"/*/ 2>/dev/null | sed -e 's|/$||' -e 's|.*/|    |'
+                return 1
+            fi
+            TEMPLATE="LAMP"
+        fi
+    fi
+
+    local TPL="$MYDOCKERS_TEMPLATE_DIR/$TEMPLATE"
+
+    if [ ! -d "$TPL" ]; then
+        echo "Templates folder not found:"
+        echo "    $TPL"
+        echo
+        echo "Available templates:"
+        ls -d "$MYDOCKERS_TEMPLATE_DIR"/*/ 2>/dev/null | sed -e 's|/$||' -e 's|.*/|    |'
+        return 1
+    fi
+
+    echo "$TEMPLATE" > "$ROOT/.myDockersTemplate"
 
     if [ ! -f "$COMPOSE" ]; then
         echo "docker-compose.yml not found:"
@@ -81,19 +119,29 @@ myDockersAdd() {
 
     mkdir -p "$ROOT/$WEB_DIR" "$ROOT/$SRC_DIR"
 
-    renderTemplate "$TPL/php/Dockerfile"    > "$ROOT/$WEB_DIR/Dockerfile"
-    renderTemplate "$TPL/mariadb/init.sql"  > "$ROOT/mariadb/init/init-${PHP_ID}_${SUB_PROJECT}.sql"
-    renderTemplate "$TPL/web-service.yml"  >> "$COMPOSE"
+    renderTemplate "$TPL/php/Dockerfile" > "$ROOT/$WEB_DIR/Dockerfile"
+
+    # per-subproject database init file, for every db the template set has
+    local sql initdir
+    for sql in $(find "$TPL" -maxdepth 2 -name init.sql 2>/dev/null); do
+        initdir="$ROOT/$(basename "$(dirname "$sql")")/init"
+        mkdir -p "$initdir"
+        renderTemplate "$sql" > "$initdir/init-${PHP_ID}_${SUB_PROJECT}.sql"
+    done
+
+    renderTemplate "$TPL/web-service.yml" >> "$COMPOSE"
 
     touch "$ROOT/$SRC_DIR/index.php"
 
     myDockersInitDBs "$PROJECT"
 
-    myDockersCommit "$ROOT" "myDockersAdd $SUB_PROJECT ($PHP_IMAGE)"
+    myDockersCommit "$ROOT" "myDockersAdd $SUB_PROJECT ($PHP_IMAGE, $TEMPLATE)"
 
     echo
     echo "Done."
     echo
     echo "Next:"
-    echo "    cd $ROOT && docker compose up -d --build"
+    echo "    myDockersBuild $PROJECT"
+    echo "    cd $ROOT && docker compose up -d"
+    echo "    myDockersInitDBs $PROJECT"
 }

@@ -61,7 +61,7 @@ myDockersHints() {
         if [ -z "$found" ]; then
             echo
             echo "No projects found. Create one:"
-            echo "    myDockersCreate <Project> <SubProject> <HTTP_PORT> <MYSQL_PORT> <PMA_PORT> [PHP_IMAGE]"
+            echo "    myDockersCreate <Project> <SubProject> <HTTP_PORT> <MYSQL_PORT> <PMA_PORT> [PHP_IMAGE] [TEMPLATES]"
         fi
 
         echo
@@ -70,6 +70,9 @@ myDockersHints() {
         return 0
     fi
 
+    ############################################################
+    # one project: hints for the containers it actually has
+    ############################################################
     local P="$1"
     local SUB="${2:-}"
     local COMPOSE="$HOME/MyDockers/$P/docker-compose.yml"
@@ -117,6 +120,13 @@ myDockersHints() {
         WEB="${WEB:-${P}_<SubProject>_web}"
     fi
 
+    # which db / admin containers does this project actually have?
+    local HAS_MARIADB="" HAS_POSTGRES="" HAS_PMA="" HAS_ADMINER=""
+    grep -q "container_name: ${P}_db\$" "$COMPOSE"          && HAS_MARIADB=1
+    grep -q "container_name: ${P}_postgres_db\$" "$COMPOSE" && HAS_POSTGRES=1
+    grep -q "container_name: ${P}_phpmyadmin\$" "$COMPOSE"  && HAS_PMA=1
+    grep -q "container_name: ${P}_adminer\$" "$COMPOSE"     && HAS_ADMINER=1
+
     cat <<EOF
 
 ========================================================
@@ -146,7 +156,7 @@ cd ~/MyDockers/$P && docker compose up -d
 myDockersInitDBs $P
 
 # Add another subproject
-myDockersAdd $P <SubProject> [PHP_IMAGE]
+myDockersAdd $P <SubProject> [PHP_IMAGE] [TEMPLATE]
 
 --------------------------------------------------------
 Shell
@@ -157,9 +167,21 @@ docker exec -it $WEB bash
 
 # Project user shell
 docker exec -it -u ${P} $WEB bash
+EOF
+
+    [ -n "$HAS_MARIADB" ] && cat <<EOF
 
 # MariaDB
 docker exec -it ${P}_db mariadb -uroot -proot
+EOF
+
+    [ -n "$HAS_POSTGRES" ] && cat <<EOF
+
+# PostgreSQL "root" shell — the superuser is ${P} (password: ${P})
+docker exec -it ${P}_postgres_db psql -U ${P} -d ${P}
+EOF
+
+    cat <<EOF
 
 --------------------------------------------------------
 Logs
@@ -167,12 +189,33 @@ Logs
 
 # Apache / PHP
 docker logs -f $WEB
+EOF
+
+    [ -n "$HAS_MARIADB" ] && cat <<EOF
 
 # MariaDB
 docker logs -f ${P}_db
+EOF
+
+    [ -n "$HAS_POSTGRES" ] && cat <<EOF
+
+# PostgreSQL
+docker logs -f ${P}_postgres_db
+EOF
+
+    [ -n "$HAS_PMA" ] && cat <<EOF
 
 # phpMyAdmin
 docker logs -f ${P}_phpmyadmin
+EOF
+
+    [ -n "$HAS_ADMINER" ] && cat <<EOF
+
+# Adminer
+docker logs -f ${P}_adminer
+EOF
+
+    cat <<EOF
 
 # All services
 cd ~/MyDockers/$P && docker compose logs -f
@@ -199,6 +242,9 @@ docker exec -it $WEB php -m
 
 # php.ini
 docker exec -it $WEB php --ini
+EOF
+
+    [ -n "$HAS_MARIADB" ] && cat <<EOF
 
 --------------------------------------------------------
 MariaDB
@@ -210,6 +256,46 @@ docker exec -it ${P}_db mariadb -uroot -proot -e "SHOW VARIABLES;"
 # File per table
 docker exec -it ${P}_db mariadb -uroot -proot \\
 -e "SHOW VARIABLES LIKE 'innodb_file_per_table';"
+EOF
+
+    if [ -n "$HAS_POSTGRES" ]; then
+        local ADMINER_PORT PG_PORT
+        ADMINER_PORT=$(grep -o '"[0-9]*:8080"' "$COMPOSE" | cut -d'"' -f2 | cut -d: -f1)
+        PG_PORT=$(grep -o '"[0-9]*:5432"' "$COMPOSE" | cut -d'"' -f2 | cut -d: -f1)
+
+        cat <<EOF
+
+--------------------------------------------------------
+PostgreSQL
+--------------------------------------------------------
+
+# "root" login — the superuser is ${P}, password: ${P}
+docker exec -it ${P}_postgres_db psql -U ${P} -d ${P}
+EOF
+
+        [ -n "$PG_PORT" ] && cat <<EOF
+
+# "root" login from the host (asks the password: ${P})
+psql -h localhost -p ${PG_PORT} -U ${P} -d ${P}
+EOF
+
+        cat <<EOF
+
+# List databases
+docker exec -it ${P}_postgres_db psql -U ${P} -d postgres -c "\\l"
+
+# Settings
+docker exec -it ${P}_postgres_db psql -U ${P} -d postgres -c "SHOW ALL;"
+EOF
+
+        [ -n "$ADMINER_PORT" ] && cat <<EOF
+
+# Adminer login (password: ${P})
+http://localhost:${ADMINER_PORT}/?pgsql=pgdb&username=${P}&db=${P}
+EOF
+    fi
+
+    cat <<EOF
 
 --------------------------------------------------------
 Container info

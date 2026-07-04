@@ -40,6 +40,8 @@ myDockersBuild() {
         return 1
     fi
 
+    _myDockersDaemonCheck || return 1
+
     mkdir -p "$LOG_DIR"
 
     local RUN_ID
@@ -108,6 +110,12 @@ myDockersBuild() {
     myDockersInitDBs "$PROJECT"
 
     myDockersCommit "$ROOT" "myDockersBuild $PROJECT ($result)"
+
+    if [ -z "$failed" ]; then
+        echo
+        echo "Next:"
+        echo "    cd $ROOT && docker compose up -d  &&  myDockersInitDBs $PROJECT"
+    fi
 
     [ -z "$failed" ]
 }

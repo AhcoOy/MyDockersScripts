@@ -44,49 +44,115 @@ Open a new terminal (or `source ~/.zshrc`) and the commands below are available.
 
 | Command | Purpose |
 |---|---|
-| `myDockersCreate <Project> <SubProject> <HTTP_PORT> <MYSQL_PORT> <PMA_PORT> [PHP_IMAGE]` | Create a new project with its first subproject |
-| `myDockersAdd <Project> <SubProject> [PHP_IMAGE]` | Add another web container to an existing project (HTTP port auto-detected) |
+| `myDockersCreate <Project> <SubProject> <HTTP_PORT> <DB_PORT> <ADMIN_PORT> [PHP_IMAGE] [TEMPLATES]` | Create a new project with its first subproject |
+| `myDockersAdd <Project> <SubProject> [PHP_IMAGE] [TEMPLATE]` | Add another web container to an existing project (HTTP port auto-detected) |
 | `myDockersBuild <Project>` | Build all services, one log per service in `build_logs/` |
 | `myDockersInitDBs <Project>` | Run all `mariadb/init/*.sql` and verify every database exists |
-| `myDockersHints <Project>` | Cheat sheet of docker commands for a project |
+| `myDockersHints [Project] [SubProject]` | List all projects, or a cheat sheet of docker commands for one |
 
 `PHP_IMAGE` is any official `php:*-apache` image and defaults to `php:8.4-apache`.
 Old images (down to PHP 7.1) work too: the Dockerfile template installs
 everything it can and prints `WARNING:` lines for what it can't.
 
-## Use case
+## Template sets
 
-Four PrestaShop versions in one stack:
+`TEMPLATES` names a folder under [templates/](templates/) and defaults to `LAMP`:
+
+| Set | Stack |
+|---|---|
+| `LAMP` | Apache + PHP, **MariaDB**, phpMyAdmin |
+| `LAPP` | Apache + PHP, **PostgreSQL** (container `<Project>_postgres_db`), Adminer |
+
+```sh
+myDockersCreate mylapp shop 8701 8702 8703 php:8.4-apache LAPP
+```
+
+The chosen set is stored in the project's `.myDockersTemplate` file, and
+`myDockersAdd` renders new subprojects from that same set automatically.
+For an old project without the marker file, `myDockersAdd` defaults to `LAMP`
+only if the project actually is one — otherwise it asks you to pass the
+template explicitly: `myDockersAdd <Project> <SubProject> <PHP_IMAGE> <TEMPLATE>`.
+
+Rendering is driven by what a template set contains: every file in the set is
+rendered with its relative path preserved (`<db>/init.sql` becomes the
+per-subproject `<db>/init/init-<db_name>.sql`, `*.sh` files are made
+executable, and `data/` folders are created only for the databases present).
+To create your own set, copy a folder under `templates/` and edit away —
+it becomes a valid `TEMPLATES` value immediately.
+
+## Use case 1
+
+Four PrestaShop versions on one LAMP stack, MariaDB + phpMyAdmin
+(runnable script: [examples/useCase.sh](examples/useCase.sh)):
 
 ```sh
 # create the project with its first subproject
-# (HTTP, MySQL and phpMyAdmin ports)
-myDockersCreate myshop ps91 8601 8602 8603 php:8.5-apache
+# (HTTP, database and phpMyAdmin ports)
+myDockersCreate myLampPrj ps91 8611 8612 8613 php:8.5-apache
 
 # add more subprojects, each with its own PHP version
-myDockersAdd myshop ps8_last    php:8.1-apache
-myDockersAdd myshop ps_1_7_last php:7.2-apache
-myDockersAdd myshop ps_1_6_last php:7.1-apache
+myDockersAdd myLampPrj ps8_last    php:8.1-apache
+myDockersAdd myLampPrj ps_1_7_last php:7.2-apache
+myDockersAdd myLampPrj ps_1_6_last php:7.1-apache
 
-# build all images — logs land in ~/MyDockers/myshop/build_logs/
-myDockersBuild myshop
+# build all images — logs land in ~/MyDockers/myLampPrj/build_logs/
+myDockersBuild myLampPrj
 
 # start the stack
-cd "$HOME/MyDockers/myshop" && docker compose up -d
+cd "$HOME/MyDockers/myLampPrj" && docker compose up -d
 
 # create the databases and users (idempotent, verifies the result)
-myDockersInitDBs myshop
+myDockersInitDBs myLampPrj
 
 # handy docker commands for daily work
-myDockersHints myshop
+myDockersHints myLampPrj
 ```
 
 Then:
 
-- `http://localhost:8601` — first subproject (the others picked 8604, 8605, ... automatically)
-- `http://localhost:8603` — phpMyAdmin, logged in as the project user, which
+- `http://localhost:8611` — first subproject (the others picked 8614, 8615, ... automatically)
+- `http://localhost:8613` — phpMyAdmin, logged in as the project user, which
   has access to every subproject database
-- put your code into `~/MyDockers/myshop/<php_id>_<subproject>_src/`
+- MariaDB listens on `localhost:8612`, container `myLampPrj_db`
+- put your code into `~/MyDockers/myLampPrj/<php_id>_<subproject>_src/`
+
+## Use case 2, with PostgreSQL
+
+The same flow on a LAPP stack — just name the template set
+(runnable script: [examples/useCase2.sh](examples/useCase2.sh)):
+
+```sh
+# create the project with its first subproject
+# (HTTP, database and Adminer ports)
+myDockersCreate myLappPrj php82web 8601 8602 8603 php:8.5-apache LAPP
+
+# add more subprojects, each with its own PHP version
+myDockersAdd myLappPrj php71web php:7.1-apache LAPP
+
+# build all images — logs land in ~/MyDockers/myLappPrj/build_logs/
+myDockersBuild myLappPrj
+
+# start the stack
+cd "$HOME/MyDockers/myLappPrj" && docker compose up -d
+
+# create the databases and users (idempotent, verifies the result)
+myDockersInitDBs myLappPrj
+
+# handy docker commands for daily work
+myDockersHints myLappPrj
+```
+
+Then:
+
+- `http://localhost:8601` / `http://localhost:8604` — the two subprojects
+- `http://localhost:8603/?pgsql=pgdb&username=myLappPrj&db=myLappPrj` — Adminer
+  login with everything preselected; password `myLappPrj`. The project user is
+  the PostgreSQL superuser, and subproject users like `php85apache_php82web`
+  work too (`myDockersCreate` prints this URL ready-made)
+- PostgreSQL listens on `localhost:8602`, container `myLappPrj_postgres_db`
+- databases: one per subproject, e.g. `php85apache_php82web` /
+  `php71apache_php71web` (user and password are the same as the name)
+- put your code into `~/MyDockers/myLappPrj/<php_id>_<subproject>_src/`
 
 ## Generated project layout
 
@@ -120,6 +186,7 @@ Naming, for a project `myshop` with subproject `ps91` on `php:8.5-apache`:
   change what future projects look like.
 - MariaDB root password is `root`; the project user (also the phpMyAdmin login)
   is `<Project>` / `<Project>` and is granted access to every subproject database.
+  On LAPP the project user `<Project>` / `<Project>` *is* the PostgreSQL superuser.
 - `myDockersBuild` and `myDockersInitDBs` keep going after a failure and report
   what failed at the end (build failures also land in the project's git history).
 - After editing these scripts, re-source them (or open a new terminal) —

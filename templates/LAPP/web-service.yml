@@ -1,0 +1,24 @@
+
+  __PHP_ID__-__SUB_PROJECT_ID__-web:
+    build:
+      context: ./__PHP_ID_____SUB_PROJECT_ID___web
+      args:
+        APP_USER: "__PROJECT__"
+        APP_PASSWORD: "__PROJECT__"
+    container_name: __PROJECT_____SUB_PROJECT_ID___web
+    environment:
+      DB_HOST: "pgdb"
+      DB_NAME: "__PHP_ID_____SUB_PROJECT_ID__"
+      DB_USER: "__PHP_ID_____SUB_PROJECT_ID__"
+      DB_PASSWORD: "__PHP_ID_____SUB_PROJECT_ID__"
+
+    ports:
+      - "__HTTP_PORT__:80"
+
+    volumes:
+      - ./__PHP_ID_____SUB_PROJECT_ID___src:/var/www/html
+      - ./home/__PROJECT__:/home/__PROJECT__
+      - ./apache/vhost.conf:/etc/apache2/sites-available/000-default.conf
+
+    depends_on:
+      - pgdb

@@ -9,6 +9,53 @@ MYDOCKERS_TEMPLATE_DIR="$(cd "$(dirname "$_myDockersScriptPath")" && pwd)/templa
 unset _myDockersScriptPath
 
 
+# Re-source every myDockers script — run after editing them, so the
+# functions in your open shell match the code on disk.
+myDockersReload() {
+    local dir f
+    dir="$(dirname "$MYDOCKERS_TEMPLATE_DIR")"
+    for f in "$dir"/*.sh; do
+        [ -f "$f" ] && source "$f"
+    done
+    echo "myDockers commands reloaded from $dir"
+}
+
+
+# Check that the docker daemon is up and answering. A wedged daemon can
+# hang the CLI instead of erroring, so the probe is killed after 8s.
+_myDockersDaemonCheck() {
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "ERROR: docker command not found. Install Docker Desktop first."
+        return 1
+    fi
+
+    local version rc
+    version=$(
+        (docker info --format '{{.ServerVersion}}' 2>/dev/null &
+         pid=$!
+         (sleep 8; kill "$pid" 2>/dev/null) &
+         watchdog=$!
+         wait "$pid"
+         rc=$?
+         kill "$watchdog" 2>/dev/null
+         exit "$rc")
+    )
+    rc=$?
+
+    if [ $rc -ne 0 ] || [ -z "$version" ]; then
+        echo "ERROR: the docker daemon is not answering."
+        echo
+        echo "Restart Docker Desktop (whale menu > Restart), or from the terminal:"
+        echo "    osascript -e 'quit app \"Docker Desktop\"' && open -a Docker"
+        echo "Then wait until this works again:"
+        echo "    docker info"
+        return 1
+    fi
+
+    return 0
+}
+
+
 normalizePhpImage() {
     local image="$1"
 
@@ -54,7 +101,9 @@ myDockersCommit() {
     fi
 
     if [ ! -f "$root/.gitignore" ]; then
-        cp "$MYDOCKERS_TEMPLATE_DIR/gitignore" "$root/.gitignore"
+        local tpl
+        tpl=$(cat "$root/.myDockersTemplate" 2>/dev/null)
+        cp "$MYDOCKERS_TEMPLATE_DIR/${tpl:-LAMP}/gitignore" "$root/.gitignore"
     fi
 
     git -C "$root" add -A
@@ -72,16 +121,19 @@ myDockersCommit() {
 }
 
 
-### create new Docker LAMP project
+### create new Docker project from a template set (default: LAMP)
 myDockersCreate() {
 
-    if [ $# -lt 5 ] || [ $# -gt 6 ]; then
+    if [ $# -lt 5 ] || [ $# -gt 7 ]; then
         echo "Usage:"
-        echo "    myDockersCreate <Project> <SubProject> <HTTP_PORT> <MYSQL_PORT> <PHPMYADMIN_PORT> [PHP_IMAGE]"
+        echo "    myDockersCreate <Project> <SubProject> <HTTP_PORT> <MYSQL_PORT> <PHPMYADMIN_PORT> [PHP_IMAGE] [TEMPLATES]"
         echo
         echo "Example:"
         echo "    myDockersCreate moduledev prestashop91 8890 8906 8902 php:8.5-apache"
-        echo "    myDockersCreate myapp mysubproject 8080 3306 8081"
+        echo "    myDockersCreate myapp mysubproject 8080 3306 8081 php:8.4-apache LAPP"
+        echo
+        echo "Available templates:"
+        ls -d "$MYDOCKERS_TEMPLATE_DIR"/*/ 2>/dev/null | sed -e 's|/$||' -e 's|.*/|    |'
         return 1
     fi
 
@@ -95,14 +147,20 @@ myDockersCreate() {
     local PHP_IMAGE="${6:-php:8.4-apache}"
     local PHP_ID
     PHP_ID=$(normalizePhpImage "$PHP_IMAGE")
+
+    # Optional template set, a folder under templates/
+    local TEMPLATE="${7:-LAMP}"
     local ROOT="$HOME/MyDockers/$PROJECT"
-    local TPL="$MYDOCKERS_TEMPLATE_DIR"
+    local TPL="$MYDOCKERS_TEMPLATE_DIR/$TEMPLATE"
     local WEB_DIR="${PHP_ID}_${SUB_PROJECT}_web"
     local SRC_DIR="${PHP_ID}_${SUB_PROJECT}_src"
 
     if [ ! -d "$TPL" ]; then
         echo "Templates folder not found:"
         echo "    $TPL"
+        echo
+        echo "Available templates:"
+        ls -d "$MYDOCKERS_TEMPLATE_DIR"/*/ 2>/dev/null | sed -e 's|/$||' -e 's|.*/|    |'
         return 1
     fi
 
@@ -116,30 +174,64 @@ myDockersCreate() {
 
     # docker exec -it -u myproject myproject_web bash
 
-    mkdir -p "$ROOT"/{apache,mariadb/init,data/mysql,home/$PROJECT,$WEB_DIR,$SRC_DIR}
+    mkdir -p "$ROOT/home/$PROJECT" "$ROOT/$WEB_DIR" "$ROOT/$SRC_DIR"
+
+    # data folders only for the databases this template set contains
+    [ -d "$TPL/mariadb" ]  && mkdir -p "$ROOT/data/mysql"
+    [ -d "$TPL/postgres" ] && mkdir -p "$ROOT/data/postgres"
+
+    # remember the template set; myDockersAdd renders from the same one
+    echo "$TEMPLATE" > "$ROOT/.myDockersTemplate"
 
     renderTemplate "$TPL/docker-compose.yml"  > "$ROOT/docker-compose.yml"
     renderTemplate "$TPL/web-service.yml"    >> "$ROOT/docker-compose.yml"
     renderTemplate "$TPL/php/Dockerfile"      > "$ROOT/$WEB_DIR/Dockerfile"
-    renderTemplate "$TPL/mariadb/Dockerfile"  > "$ROOT/mariadb/Dockerfile"
-    renderTemplate "$TPL/mariadb/my.cnf"      > "$ROOT/mariadb/my.cnf"
-    renderTemplate "$TPL/mariadb/init.sql"    > "$ROOT/mariadb/init/init-${PHP_ID}_${SUB_PROJECT}.sql"
-    renderTemplate "$TPL/mariadb/initDb.sh"   > "$ROOT/mariadb/initDb.sh"
-    renderTemplate "$TPL/apache/vhost.conf"   > "$ROOT/apache/vhost.conf"
 
-    chmod +x "$ROOT/mariadb/initDb.sh"
+    # render every other file the template set contains, keeping paths
+    local tfile dest
+    for tfile in $(cd "$TPL" && find . -type f | sed 's|^\./||'); do
+        case "$tfile" in
+            gitignore|docker-compose.yml|web-service.yml|php/Dockerfile|*.DS_Store)
+                continue
+                ;;
+        esac
+
+        case "$tfile" in
+            */init.sql)
+                # per-subproject database init file
+                dest="$ROOT/${tfile%/init.sql}/init/init-${PHP_ID}_${SUB_PROJECT}.sql"
+                ;;
+            *)
+                dest="$ROOT/$tfile"
+                ;;
+        esac
+
+        mkdir -p "$(dirname "$dest")"
+        renderTemplate "$TPL/$tfile" > "$dest"
+
+        case "$dest" in
+            *.sh) chmod +x "$dest" ;;
+        esac
+    done
 
     touch "$ROOT/$SRC_DIR/index.php"
 
-    myDockersCommit "$ROOT" "myDockersCreate $PROJECT $SUB_PROJECT ($PHP_IMAGE)"
+    myDockersCommit "$ROOT" "myDockersCreate $PROJECT $SUB_PROJECT ($PHP_IMAGE, $TEMPLATE)"
 
     echo
     echo "Done."
     echo
     echo "Next:"
-    echo "    cd $ROOT && docker compose up -d --build"
+    echo "    myDockersBuild $PROJECT"
+    echo "    cd $ROOT && docker compose up -d"
+
     echo "To INIT DBs:"
-    echo "    cd $ROOT && mariadb/initDb.sh"
-    echo "    cd $ROOT && docker compose up -d --build && mariadb/initDb.sh"
+    echo "    cd $ROOT && docker compose up -d"
+    echo "    cd $ROOT && docker compose up -d && myDockersInitDBs $PROJECT"
+
+    if [ -d "$TPL/postgres" ]; then
+        echo "Adminer login (password: $PROJECT):"
+        echo "    http://localhost:$PMA_PORT/?pgsql=pgdb&username=$PROJECT&db=$PROJECT"
+    fi
 
 }
