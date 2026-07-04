@@ -22,7 +22,7 @@ its changes, `data/` (MySQL data) and `*_src/` (your application code) stay igno
 Clone into your home directory:
 
 ```sh
-git clone https://github.com/<your-github-user>/MyDockersScripts.git "$HOME/MyDockersScripts"
+git clone https://github.com/AhcoOy/MyDockersScripts.git "$HOME/MyDockersScripts"
 ```
 
 In `.zshrc` (or any favorite shell rc file) add:
@@ -124,3 +124,15 @@ Naming, for a project `myshop` with subproject `ps91` on `php:8.5-apache`:
   what failed at the end (build failures also land in the project's git history).
 - After editing these scripts, re-source them (or open a new terminal) —
   functions already loaded in a shell keep their old code.
+
+## Security
+
+These stacks are for **local development only**. Credentials are fixed and
+well-known (`root`/`root`, `<Project>`/`<Project>`), there is no TLS, and the
+published ports have no access control. Never expose them to the internet or
+run them on a shared host.
+
+## License
+
+[MIT](LICENSE) © Ahco Oy
+
