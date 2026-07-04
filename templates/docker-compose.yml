@@ -1,0 +1,34 @@
+services:
+
+  db:
+    build:
+      context: ./mariadb
+    container_name: __PROJECT___db
+
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: __PROJECT__
+      MYSQL_USER: __PROJECT__
+      MYSQL_PASSWORD: __PROJECT__
+
+    volumes:
+      - ./mariadb/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      - ./data/mysql:/var/lib/mysql
+
+    ports:
+      - "__MYSQL_PORT__:3306"
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: __PROJECT___phpmyadmin
+
+    ports:
+      - "__PMA_PORT__:80"
+
+    environment:
+      PMA_HOST: "db"
+      PMA_USER: "__PROJECT__"
+      PMA_PASSWORD: "__PROJECT__"
+
+    depends_on:
+      - db

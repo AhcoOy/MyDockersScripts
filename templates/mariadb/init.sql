@@ -1,0 +1,17 @@
+CREATE DATABASE IF NOT EXISTS `__PHP_ID_____SUB_PROJECT_ID__`
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS '__PHP_ID_____SUB_PROJECT_ID__'@'%'
+IDENTIFIED BY '__PHP_ID_____SUB_PROJECT_ID__';
+
+GRANT ALL PRIVILEGES
+ON `__PHP_ID_____SUB_PROJECT_ID__`.*
+TO '__PHP_ID_____SUB_PROJECT_ID__'@'%';
+
+-- project user (phpMyAdmin login) sees every subproject database
+GRANT ALL PRIVILEGES
+ON `__PHP_ID_____SUB_PROJECT_ID__`.*
+TO '__PROJECT__'@'%';
+
+FLUSH PRIVILEGES;
