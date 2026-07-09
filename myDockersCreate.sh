@@ -6,7 +6,7 @@ else
     _myDockersScriptPath="${(%):-%x}"
 fi
 MYDOCKERS_TEMPLATE_DIR="$(cd "$(dirname "$_myDockersScriptPath")" && pwd)/templates"
-unset _myDockersScriptPath
+unset _myDockesrScriptPath
 
 
 # Re-source every myDockers script — run after editing them, so the
@@ -22,27 +22,13 @@ myDockersReload() {
 
 
 # Check that the docker daemon is up and answering. A wedged daemon can
-# hang the CLI instead of erroring, so the probe is killed after 8s.
 _myDockersDaemonCheck() {
-    if ! command -v docker >/dev/null 2>&1; then
-        echo "ERROR: docker command not found. Install Docker Desktop first."
+    command -v docker >/dev/null 2>&1 || {
+        echo "ERROR: docker command not found."
         return 1
-    fi
+    }
 
-    local version rc
-    version=$(
-        (docker info --format '{{.ServerVersion}}' 2>/dev/null &
-         pid=$!
-         (sleep 8; kill "$pid" 2>/dev/null) &
-         watchdog=$!
-         wait "$pid"
-         rc=$?
-         kill "$watchdog" 2>/dev/null
-         exit "$rc")
-    )
-    rc=$?
-
-    if [ $rc -ne 0 ] || [ -z "$version" ]; then
+    docker info >/dev/null 2>&1 || {
         echo "ERROR: the docker daemon is not answering."
         echo
         echo "Restart Docker Desktop (whale menu > Restart), or from the terminal:"
@@ -50,8 +36,7 @@ _myDockersDaemonCheck() {
         echo "Then wait until this works again:"
         echo "    docker info"
         return 1
-    fi
-
+    }
     return 0
 }
 
