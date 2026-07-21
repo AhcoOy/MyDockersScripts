@@ -6,6 +6,7 @@
         APP_USER: "__PROJECT__"
         APP_PASSWORD: "__PROJECT__"
     container_name: __PROJECT_____SUB_PROJECT_ID___web
+    hostname: __SUB_PROJECT_ID__
     environment:
       DB_HOST: "db"
       DB_NAME: "__PHP_ID_____SUB_PROJECT_ID__"
@@ -18,7 +19,15 @@
     volumes:
       - ./__PHP_ID_____SUB_PROJECT_ID___src:/var/www/html
       - ./home/__PROJECT__:/home/__PROJECT__
-      - ./apache/vhost.conf:/etc/apache2/sites-available/000-default.conf
+      - ./mounted_etc/__SUB_PROJECT_ID__/vhost.conf:/etc/apache2/sites-available/000-default.conf
+      - ./mounted_etc/__SUB_PROJECT_ID__/php.ini:/usr/local/etc/php/conf.d/zz-mydockers.ini
+      - ./mounted_shared_etc/hosts:/etc/hosts:ro
+
+    networks:
+      default:
+        ipv4_address: __NET_PREFIX__.__WEB_OCTET__
+        aliases:
+          - __SUB_PROJECT_ID__
 
     depends_on:
       - db

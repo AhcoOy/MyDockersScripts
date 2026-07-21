@@ -1,9 +1,16 @@
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: __NET_PREFIX__.0/24
+
 services:
 
   pgdb:
     build:
       context: ./postgres
     container_name: __PROJECT___postgres_db
+    hostname: pgdb
 
     environment:
       POSTGRES_USER: __PROJECT__
@@ -12,19 +19,32 @@ services:
 
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
+      - ./mounted_shared_etc/hosts:/etc/hosts:ro
 
     ports:
       - "__MYSQL_PORT__:5432"
 
+    networks:
+      default:
+        ipv4_address: __NET_PREFIX__.10
+
   adminer:
     image: adminer:latest
     container_name: __PROJECT___adminer
+    hostname: adminer
 
     ports:
       - "__PMA_PORT__:8080"
 
     environment:
       ADMINER_DEFAULT_SERVER: pgdb
+
+    volumes:
+      - ./mounted_shared_etc/hosts:/etc/hosts:ro
+
+    networks:
+      default:
+        ipv4_address: __NET_PREFIX__.11
 
     depends_on:
       - pgdb

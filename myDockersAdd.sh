@@ -28,6 +28,8 @@ myDockersAdd() {
     local PROJECT="$1"
     local SUB_PROJECT="$2"
 
+    _myDockersCheckSubProject "$SUB_PROJECT" || return 1
+
     # Optional, default to the latest stable PHP Apache image
     local PHP_IMAGE="${3:-php:8.4-apache}"
     local TEMPLATE_ARG="${4:-}"
@@ -115,11 +117,48 @@ myDockersAdd() {
 
     local HTTP_PORT=$((LAST_PORT + 1))
 
-    echo "Adding $CONTAINER ($PHP_IMAGE, http port $HTTP_PORT) to $ROOT"
+    # Static-IP network: reuse the project's subnet; older projects created
+    # without one get the networks block prepended (existing services keep
+    # their dynamic IPs, only new services get static ones).
+    local NET_PREFIX
+    NET_PREFIX=$(grep -Eo 'subnet: *[0-9]+\.[0-9]+\.[0-9]+' "$COMPOSE" | head -1 | sed 's/subnet: *//')
+
+    if [ -z "$NET_PREFIX" ]; then
+        NET_PREFIX=$(_myDockersNextSubnet) || return 1
+        echo "Adding network $NET_PREFIX.0/24 to docker-compose.yml"
+        printf 'networks:\n  default:\n    ipam:\n      config:\n        - subnet: %s.0/24\n\n' "$NET_PREFIX" \
+            | cat - "$COMPOSE" > "$COMPOSE.tmp" && mv "$COMPOSE.tmp" "$COMPOSE"
+    fi
+
+    # Next free web-service IP: highest ipv4_address last octet + 1 (min .101)
+    local LAST_OCTET WEB_OCTET
+    LAST_OCTET=$(grep -Eo 'ipv4_address: *[0-9.]+' "$COMPOSE" | sed 's/.*\.//' | sort -n | tail -1)
+
+    if [ -z "$LAST_OCTET" ] || [ "$LAST_OCTET" -lt 101 ]; then
+        WEB_OCTET=101
+    else
+        WEB_OCTET=$((LAST_OCTET + 1))
+    fi
+
+    if [ "$WEB_OCTET" -gt 254 ]; then
+        echo "No free ip address left in $NET_PREFIX.0/24"
+        return 1
+    fi
+
+    echo "Adding $CONTAINER ($PHP_IMAGE, http port $HTTP_PORT, ip $NET_PREFIX.$WEB_OCTET) to $ROOT"
 
     mkdir -p "$ROOT/$WEB_DIR" "$ROOT/$SRC_DIR"
 
     renderTemplate "$TPL/php/Dockerfile" > "$ROOT/$WEB_DIR/Dockerfile"
+
+    # per-service config folder, mounted into the container (vhost.conf, php.ini)
+    local mfile
+    if [ -d "$TPL/mounted_etc" ]; then
+        for mfile in $(cd "$TPL/mounted_etc" && find . -type f | sed 's|^\./||'); do
+            mkdir -p "$(dirname "$ROOT/mounted_etc/$SUB_PROJECT/$mfile")"
+            renderTemplate "$TPL/mounted_etc/$mfile" > "$ROOT/mounted_etc/$SUB_PROJECT/$mfile"
+        done
+    fi
 
     # per-subproject database init file, for every db the template set has
     local sql initdir
@@ -132,6 +171,8 @@ myDockersAdd() {
     renderTemplate "$TPL/web-service.yml" >> "$COMPOSE"
 
     touch "$ROOT/$SRC_DIR/index.php"
+
+    _myDockersWriteHosts "$ROOT"
 
     myDockersInitDBs "$PROJECT"
 

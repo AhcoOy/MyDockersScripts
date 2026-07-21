@@ -44,6 +44,8 @@ RUN failed=""; \
         iputils-ping \
         dnsutils \
         openssh-client \
+        openssh-server \
+        sshpass \
         postgresql-client \
         sqlite3 \
         jq \
@@ -117,4 +119,13 @@ WORKDIR /var/www/html
 
 ########## make Quasar build work with openssl 3.0, see
 ENV NODE_OPTIONS=--openssl-legacy-provider
+
+
+
+# Run sshd next to apache, so the project's containers can ssh into each
+# other by hostname (every service is in mounted_shared_etc/hosts, and the
+# compose network has no firewall between containers). Login with the
+# project user: ssh __PROJECT__@<hostname>, password __PROJECT__.
+# Fail-soft on bases where openssh-server could not be installed.
+CMD ["/bin/sh", "-c", "service ssh start || echo 'WARNING: could not start sshd'; exec apache2-foreground"]
 

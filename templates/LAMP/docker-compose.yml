@@ -1,9 +1,16 @@
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: __NET_PREFIX__.0/24
+
 services:
 
   db:
     build:
       context: ./mariadb
     container_name: __PROJECT___db
+    hostname: db
 
     environment:
       MYSQL_ROOT_PASSWORD: root
@@ -14,13 +21,19 @@ services:
     volumes:
       - ./mariadb/my.cnf:/etc/mysql/conf.d/my.cnf:ro
       - ./data/mysql:/var/lib/mysql
+      - ./mounted_shared_etc/hosts:/etc/hosts:ro
 
     ports:
       - "__MYSQL_PORT__:3306"
 
+    networks:
+      default:
+        ipv4_address: __NET_PREFIX__.10
+
   phpmyadmin:
     image: phpmyadmin:latest
     container_name: __PROJECT___phpmyadmin
+    hostname: phpmyadmin
 
     ports:
       - "__PMA_PORT__:80"
@@ -29,6 +42,13 @@ services:
       PMA_HOST: "db"
       PMA_USER: "__PROJECT__"
       PMA_PASSWORD: "__PROJECT__"
+
+    volumes:
+      - ./mounted_shared_etc/hosts:/etc/hosts:ro
+
+    networks:
+      default:
+        ipv4_address: __NET_PREFIX__.11
 
     depends_on:
       - db

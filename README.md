@@ -160,7 +160,6 @@ Then:
 ~/MyDockers/myshop/
 ├── docker-compose.yml
 ├── .gitignore                     # data/ and *_src/ ignored
-├── apache/vhost.conf
 ├── build_logs/                    # one log per service + summary, per build run
 ├── data/mysql/                    # MariaDB data (ignored by git)
 ├── home/myshop/                   # shared home dir, mounted into web containers
@@ -169,6 +168,11 @@ Then:
 │   ├── my.cnf
 │   ├── initDb.sh
 │   └── init/init-<db>.sql         # one per subproject
+├── mounted_etc/ps91/              # per-subproject config, mounted into that container
+│   ├── vhost.conf                 #   -> /etc/apache2/sites-available/000-default.conf
+│   └── php.ini                    #   -> /usr/local/etc/php/conf.d/zz-mydockers.ini
+├── mounted_shared_etc/
+│   └── hosts                      # all hostnames + static IPs, -> /etc/hosts in every service
 ├── php85apache_ps91_web/          # build context (Dockerfile) per subproject
 └── php85apache_ps91_src/          # your application code (ignored by git)
 ```
@@ -179,6 +183,48 @@ Naming, for a project `myshop` with subproject `ps91` on `php:8.5-apache`:
 - container: `myshop_ps91_web` (db: `myshop_db`, phpMyAdmin: `myshop_phpmyadmin`)
 - database / db user / db password: `php85apache_ps91`
 - the web container gets `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` as environment variables
+
+### Network: static IPs and hostnames
+
+Every project gets its own subnet — `myDockersCreate` picks the next free
+`172.30.N.0/24` across all projects, and `myDockersAdd` reuses it (projects
+created before this feature get the network block added on their next
+`myDockersAdd`). Inside the project every service has a static IP and a
+hostname:
+
+- database (`db` / `pgdb`): `.10`, phpMyAdmin / Adminer: `.11`
+- web services: `.101`, `.102`, ... in the order they were added
+- each web container's hostname is its subproject name (`ps91`), which is
+  also a network alias — containers reach each other with plain
+  `http://ps91/` or via the static IP
+- `mounted_shared_etc/hosts` lists every hostname with its static IP and is
+  mounted as `/etc/hosts` into **every** service, so all containers resolve
+  each other even without Docker's DNS. Each entry carries comments showing
+  exactly how to reach that service (ssh/curl from another container, URL
+  and db client from your machine, `docker exec` for a shell)
+- the hosts file is regenerated on every `myDockersAdd`, but only above its
+  marker line — add your own entries below the marker and they are kept
+
+Per-subproject config lives in `mounted_etc/<subproject>/` — edit `vhost.conf`
+or `php.ini` there and restart just that container.
+
+### SSH between containers
+
+Every web container runs an SSH server next to Apache, and there is no
+firewall between containers on the project network — from any container you
+can reach any other by hostname, on any port:
+
+```sh
+docker exec -it myLampPrj_ps91_web bash
+
+ssh myLampPrj@ps8_last        # password: myLampPrj (the project user)
+curl http://ps_1_7_last/      # every web service answers on port 80
+```
+
+Because `/home/<Project>` is one shared folder mounted into all web
+containers, an SSH key generated once (`ssh-keygen`) works between all of
+them after `cat ~/.ssh/id_*.pub >> ~/.ssh/authorized_keys`. `sshpass` is
+preinstalled for scripted password logins.
 
 ## Notes
 
