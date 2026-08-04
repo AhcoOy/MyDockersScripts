@@ -48,6 +48,8 @@ Open a new terminal (or `source ~/.zshrc`) and the commands below are available.
 | `myDockersAdd <Project> <SubProject> [PHP_IMAGE] [TEMPLATE]` | Add another web container to an existing project (HTTP port auto-detected) |
 | `myDockersBuild <Project>` | Build all services, one log per service in `build_logs/` |
 | `myDockersInitDBs <Project>` | Run all `mariadb/init/*.sql` and verify every database exists |
+| `myDockersEmulate <Project> <SubProject> <Domain> [PHP_IMAGE]` | Turn a subproject into an HTTPS emulator of a real API domain (adds it first if needed) |
+| `myDockersDown` | `docker compose down` every project under `~/MyDockers` — handy before shutting down the host |
 | `myDockersHints [Project] [SubProject]` | List all projects, or a cheat sheet of docker commands for one |
 
 `PHP_IMAGE` is any official `php:*-apache` image and defaults to `php:8.4-apache`.
@@ -170,9 +172,12 @@ Then:
 │   └── init/init-<db>.sql         # one per subproject
 ├── mounted_etc/ps91/              # per-subproject config, mounted into that container
 │   ├── vhost.conf                 #   -> /etc/apache2/sites-available/000-default.conf
-│   └── php.ini                    #   -> /usr/local/etc/php/conf.d/zz-mydockers.ini
+│   ├── php.ini                    #   -> /usr/local/etc/php/conf.d/zz-mydockers.ini
+│   └── ssl/                       #   server certs, only on emulators (myDockersEmulate)
 ├── mounted_shared_etc/
-│   └── hosts                      # all hostnames + static IPs, -> /etc/hosts in every service
+│   ├── hosts                      # all hostnames + static IPs, -> /etc/hosts in every service
+│   ├── ca-certificates.crt        # distro CA roots + the project dev CA, -> /etc/ssl/certs/... in every service
+│   └── ssl/ca.crt, ca.key         # the project dev CA (10 y), signs emulator certificates
 ├── php85apache_ps91_web/          # build context (Dockerfile) per subproject
 └── php85apache_ps91_src/          # your application code (ignored by git)
 ```
@@ -226,6 +231,42 @@ containers, an SSH key generated once (`ssh-keygen`) works between all of
 them after `cat ~/.ssh/id_*.pub >> ~/.ssh/authorized_keys`. `sshpass` is
 preinstalled for scripted password logins.
 
+### Emulating HTTPS APIs
+
+When your application code calls a real third-party API over a hardcoded
+HTTPS URL (a payment provider, a shipping API, ...), a subproject can stand
+in for it — with a certificate every container in the project trusts:
+
+```sh
+myDockersEmulate myshop emulate_paytrail services.paytrail.com php:8.5-apache
+myDockersBuild myshop
+cd ~/MyDockers/myshop && docker compose up -d
+```
+
+After that, `https://services.paytrail.com/` from **any** container of the
+project lands on the `emulate_paytrail` service's document root, with full
+certificate validation — put your mock API implementation there. Run the
+command again with another domain to emulate several APIs from the same
+subproject.
+
+How it works:
+
+- every project has a dev CA (`mounted_shared_etc/ssl/`, generated at
+  create time). `myDockersEmulate` signs a server certificate for the
+  domain with it (SAN, 5 years) into `mounted_etc/<subproject>/ssl/`, and
+  appends a `*:443` vhost to that subproject's `vhost.conf`
+- every service trusts the CA two ways: `mounted_shared_etc/ca-certificates.crt`
+  (distro roots + dev CA) overlays `/etc/ssl/certs/ca-certificates.crt`,
+  and the CA is also mounted hash-named (`/etc/ssl/certs/<hash>.0`) for
+  old curl/openssl that resolves via CApath instead of the bundle —
+  PHP 7.x images included
+- the generated hosts file redirects the domain to the emulator's static
+  IP in every container (entries live above the marker line, your own
+  entries below it are kept)
+- projects created before this feature get the CA and the mounts
+  retro-fitted on their next `myDockersAdd` / `myDockersEmulate`; services
+  from before the `mounted_etc` convention stay untouched
+
 ## Notes
 
 - All generated files come from [templates/](templates/) — edit the templates to
@@ -241,9 +282,10 @@ preinstalled for scripted password logins.
 ## Security
 
 These stacks are for **local development only**. Credentials are fixed and
-well-known (`root`/`root`, `<Project>`/`<Project>`), there is no TLS, and the
-published ports have no access control. Never expose them to the internet or
-run them on a shared host.
+well-known (`root`/`root`, `<Project>`/`<Project>`), the only TLS is the
+project's own dev CA (whose private key sits unprotected in the project
+folder), and the published ports have no access control. Never expose them
+to the internet or run them on a shared host.
 
 ## License
 

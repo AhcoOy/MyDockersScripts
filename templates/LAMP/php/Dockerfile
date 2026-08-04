@@ -119,6 +119,10 @@ WORKDIR /var/www/html
 ########## make Quasar build work with openssl 3.0, see
 ENV NODE_OPTIONS=--openssl-legacy-provider
 
+# mod_ssl for HTTPS API emulators (myDockersEmulate) — harmless without a
+# *:443 vhost. Fail-soft on bases where apache tooling differs.
+RUN a2enmod ssl || echo "WARNING: could not enable mod_ssl"
+
 # Run sshd next to apache, so the project's containers can ssh into each
 # other by hostname (every service is in mounted_shared_etc/hosts, and the
 # compose network has no firewall between containers). Login with the

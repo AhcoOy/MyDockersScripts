@@ -22,6 +22,8 @@ services:
       - ./mariadb/my.cnf:/etc/mysql/conf.d/my.cnf:ro
       - ./data/mysql:/var/lib/mysql
       - ./mounted_shared_etc/hosts:/etc/hosts:ro
+      - ./mounted_shared_etc/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - ./mounted_shared_etc/ssl/ca.crt:/etc/ssl/certs/__CA_HASH__.0:ro
 
     ports:
       - "__MYSQL_PORT__:3306"
@@ -45,6 +47,8 @@ services:
 
     volumes:
       - ./mounted_shared_etc/hosts:/etc/hosts:ro
+      - ./mounted_shared_etc/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - ./mounted_shared_etc/ssl/ca.crt:/etc/ssl/certs/__CA_HASH__.0:ro
 
     networks:
       default:

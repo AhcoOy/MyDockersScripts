@@ -132,10 +132,100 @@ _myDockersWriteHosts() {
                 cn = ""; host = ""; port = ""; iport = ""
             }' \
             "$root/docker-compose.yml"
+
+        # Emulated HTTPS APIs (myDockersEmulate): any *:443 vhost in a
+        # subproject's mounted_etc config redirects its ServerName domain
+        # to that subproject's static IP, for every container.
+        find "$root/mounted_etc" -mindepth 2 -maxdepth 2 -name vhost.conf 2>/dev/null \
+        | while IFS= read -r vh; do
+            sub=$(basename "$(dirname "$vh")")
+            ip=$(awk -v h="$sub" '
+                $1 == "hostname:" { found = ($2 == h) }
+                found && $1 == "ipv4_address:" { print $2; exit }' \
+                "$root/docker-compose.yml")
+            [ -n "$ip" ] || continue
+            awk '/<VirtualHost \*:443>/ { in443 = 1 }
+                 /<\/VirtualHost>/      { in443 = 0 }
+                 in443 && $1 == "ServerName" { print $2 }' "$vh" \
+            | while IFS= read -r dom; do
+                printf '\n# %s — HTTPS API emulated by %s\n' "$dom" "$sub"
+                printf '#   from any container : curl https://%s/\n' "$dom"
+                printf '%-15s %s\n' "$ip" "$dom"
+            done
+        done
+
         echo
         echo "$marker"
         if [ -n "$custom" ]; then printf '%s\n' "$custom"; fi
     } > "$hosts"
+}
+
+
+# Make sure the project has its dev CA (mounted_shared_etc/ssl/ca.*) and
+# the overlaid CA bundle (mounted_shared_etc/ca-certificates.crt = distro
+# roots + dev CA). Every service bind-mounts both: the bundle over
+# /etc/ssl/certs/ca-certificates.crt, and ca.crt hash-named as
+# /etc/ssl/certs/<hash>.0 for old curl/openssl that resolves via CApath
+# instead of the bundle. The hash comes from the CA subject, so it differs
+# per project — sets CA_HASH in the caller's scope for renderTemplate.
+# myDockersEmulate signs per-domain server certificates with this CA.
+_myDockersEnsureCA() {
+    local root="$1"
+    local php_image="$2"
+    local project ssldir generated=""
+    project=$(basename "$root")
+    ssldir="$root/mounted_shared_etc/ssl"
+
+    command -v openssl >/dev/null 2>&1 || {
+        echo "ERROR: openssl command not found, cannot create the project dev CA."
+        return 1
+    }
+
+    mkdir -p "$ssldir"
+
+    if [ ! -f "$ssldir/ca.crt" ]; then
+        echo "Generating dev CA for $project (mounted_shared_etc/ssl/ca.crt, 10 years)"
+        openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+            -keyout "$ssldir/ca.key" -out "$ssldir/ca.crt" \
+            -subj "/CN=$project Dev CA/O=$project local dev" 2>/dev/null || {
+            echo "ERROR: openssl failed to generate the dev CA."
+            return 1
+        }
+        generated=1
+    fi
+
+    CA_HASH=$(openssl x509 -in "$ssldir/ca.crt" -noout -subject_hash)
+    [ -n "$CA_HASH" ] || {
+        echo "ERROR: could not compute the subject hash of $ssldir/ca.crt"
+        return 1
+    }
+
+    # (Re)build the bundle when missing or when the CA was just generated.
+    # Sources: the host's own bundle (Linux), else extracted from the PHP
+    # base image (macOS has no ca-certificates.crt on the host).
+    if [ ! -f "$root/mounted_shared_etc/ca-certificates.crt" ] || [ -n "$generated" ]; then
+        local roots="$root/mounted_shared_etc/.ca-roots.tmp"
+
+        if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+            cat /etc/ssl/certs/ca-certificates.crt > "$roots"
+        else
+            echo "No host CA bundle, extracting one from $php_image ..."
+            _myDockersDaemonCheck || { rm -f "$roots"; return 1; }
+            docker run --rm "$php_image" cat /etc/ssl/certs/ca-certificates.crt > "$roots" 2>/dev/null
+        fi
+
+        if ! grep -q "BEGIN CERTIFICATE" "$roots" 2>/dev/null; then
+            rm -f "$roots"
+            echo "ERROR: could not obtain a CA root bundle (host has no"
+            echo "/etc/ssl/certs/ca-certificates.crt and docker extraction failed)."
+            return 1
+        fi
+
+        cat "$roots" "$ssldir/ca.crt" > "$root/mounted_shared_etc/ca-certificates.crt"
+        rm -f "$roots"
+    fi
+
+    return 0
 }
 
 
@@ -190,6 +280,8 @@ renderTemplate() {
         -e "s|__HTTP_PORT__|$HTTP_PORT|g" \
         -e "s|__MYSQL_PORT__|$MYSQL_PORT|g" \
         -e "s|__PMA_PORT__|$PMA_PORT|g" \
+        -e "s|__CA_HASH__|$CA_HASH|g" \
+        -e "s|__EMULATED_DOMAIN__|$EMULATED_DOMAIN|g" \
         "$template"
 }
 
@@ -289,6 +381,12 @@ myDockersCreate() {
 
     echo "Creating $ROOT (network $NET_PREFIX.0/24)"
 
+    # dev CA + CA bundle first: the compose templates bind-mount both into
+    # every service, and renderTemplate needs CA_HASH ("Project already
+    # exists" was checked above, so on failure the fresh dir can go)
+    local CA_HASH
+    _myDockersEnsureCA "$ROOT" "$PHP_IMAGE" || { rm -rf "$ROOT"; return 1; }
+
     # docker exec -it -u myproject myproject_web bash
 
     mkdir -p "$ROOT/home/$PROJECT" "$ROOT/$WEB_DIR" "$ROOT/$SRC_DIR"
@@ -309,6 +407,10 @@ myDockersCreate() {
     for tfile in $(cd "$TPL" && find . -type f | sed 's|^\./||'); do
         case "$tfile" in
             gitignore|docker-compose.yml|web-service.yml|php/Dockerfile|*.DS_Store)
+                continue
+                ;;
+            mounted_etc/vhost-ssl.conf)
+                # emulator-only chunk, rendered by myDockersEmulate
                 continue
                 ;;
         esac

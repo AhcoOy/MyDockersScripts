@@ -147,6 +147,13 @@ myDockersAdd() {
 
     echo "Adding $CONTAINER ($PHP_IMAGE, http port $HTTP_PORT, ip $NET_PREFIX.$WEB_OCTET) to $ROOT"
 
+    # dev CA + CA bundle: the web-service template bind-mounts both, and
+    # renderTemplate needs CA_HASH. Projects created before the CA feature
+    # get theirs generated here (their old services keep running without
+    # the mounts; only services added from now on use them).
+    local CA_HASH
+    _myDockersEnsureCA "$ROOT" "$PHP_IMAGE" || return 1
+
     mkdir -p "$ROOT/$WEB_DIR" "$ROOT/$SRC_DIR"
 
     renderTemplate "$TPL/php/Dockerfile" > "$ROOT/$WEB_DIR/Dockerfile"
@@ -155,6 +162,12 @@ myDockersAdd() {
     local mfile
     if [ -d "$TPL/mounted_etc" ]; then
         for mfile in $(cd "$TPL/mounted_etc" && find . -type f | sed 's|^\./||'); do
+            case "$mfile" in
+                vhost-ssl.conf)
+                    # emulator-only chunk, rendered by myDockersEmulate
+                    continue
+                    ;;
+            esac
             mkdir -p "$(dirname "$ROOT/mounted_etc/$SUB_PROJECT/$mfile")"
             renderTemplate "$TPL/mounted_etc/$mfile" > "$ROOT/mounted_etc/$SUB_PROJECT/$mfile"
         done
