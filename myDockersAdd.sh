@@ -32,6 +32,7 @@ myDockersAdd() {
 
     # Optional, default to the latest stable PHP Apache image
     local PHP_IMAGE="${3:-php:8.4-apache}"
+    _myDockersCheckPhpImage "$PHP_IMAGE" || return 1
     local TEMPLATE_ARG="${4:-}"
     local PHP_ID
     PHP_ID=$(normalizePhpImage "$PHP_IMAGE")

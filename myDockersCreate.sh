@@ -254,6 +254,39 @@ _myDockersCheckSubProject() {
 }
 
 
+# A malformed PHP_IMAGE (php7.0:apache instead of php:7.0-apache) slips a
+# ':' into service and folder names, silently corrupting docker-compose.yml
+# — myDockersBuild then fails with "Could not read services". Catch it up
+# front (create, add, emulate) before anything is rendered.
+_myDockersCheckPhpImage() {
+    local image="$1" rest ver
+
+    case "$image" in
+        php:*apache*)
+            rest="${image#php:}"
+            case "$rest" in
+                *[!a-z0-9.-]*) ;;       # bad characters — fall through
+                *) return 0 ;;
+            esac
+            ;;
+    esac
+
+    echo "PHP_IMAGE must be an official php apache image, like php:8.4-apache"
+    echo
+    echo "Instead of:  $image"
+    ver=$(printf '%s' "$image" | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
+    [ -n "$ver" ] && echo "use e.g.  :  php:$ver-apache"
+    echo
+    echo "php apache images already pulled on this machine:"
+    docker images --format '{{.Repository}}:{{.Tag}}' php 2>/dev/null | grep apache | sort -u | sed 's/^/    /' \
+        || echo "    (none found, or docker not answering)"
+    echo
+    echo "Any php:<version>-apache tag from https://hub.docker.com/_/php works;"
+    echo "php 7.1 and newer are tested, older builds are fail-soft (WARNING lines)."
+    return 1
+}
+
+
 normalizePhpImage() {
     local image="$1"
 
@@ -349,6 +382,7 @@ myDockersCreate() {
 
     # Optional, default to the latest stable PHP Apache image
     local PHP_IMAGE="${6:-php:8.4-apache}"
+    _myDockersCheckPhpImage "$PHP_IMAGE" || return 1
     local PHP_ID
     PHP_ID=$(normalizePhpImage "$PHP_IMAGE")
 

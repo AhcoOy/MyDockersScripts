@@ -23,8 +23,23 @@ myDockersRestart and myDockersRemove (2026-09-28)
 - Refuses folders that are not MyDockers projects (no compose file or
   `.myDockersTemplate`), and keeps the folder if `docker compose down` fails
 
+### myDockersCreate / myDockersAdd / myDockersEmulate
+- `PHP_IMAGE` is validated up front: a malformed image name
+  (`php7.0:apache` instead of `php:7.0-apache`) used to render a `:` into
+  service and folder names and silently corrupt `docker-compose.yml`; now
+  the command refuses it before rendering anything, suggests the corrected
+  tag and lists the php apache images already pulled on the machine
+
+### myDockersBuild
+- Checks the `FROM` php image of every Dockerfile before building and
+  points out a bad one (with how to undo the `myDockersAdd` that created
+  it) instead of wasting a build run
+- When the compose file cannot be read, shows docker compose's own error
+  and explains the typical cause (a mistyped `PHP_IMAGE`), not running
+  containers
+
 ### README
-- Both commands added to the commands table
+- Both new commands added to the commands table
 
 # Release v3.1.0 notes
 HTTPS API emulation — per-project dev CA, myDockersEmulate (2026-08-04)

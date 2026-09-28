@@ -37,6 +37,7 @@ myDockersEmulate() {
     local PHP_IMAGE="${4:-php:8.4-apache}"
 
     _myDockersCheckSubProject "$SUB_PROJECT" || return 1
+    _myDockersCheckPhpImage "$PHP_IMAGE" || return 1
 
     # bare lowercase hostname only — no scheme, no path, no port
     case "$DOMAIN" in
