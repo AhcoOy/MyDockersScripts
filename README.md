@@ -50,6 +50,8 @@ Open a new terminal (or `source ~/.zshrc`) and the commands below are available.
 | `myDockersInitDBs <Project>` | Run all `mariadb/init/*.sql` and verify every database exists |
 | `myDockersEmulate <Project> <SubProject> <Domain> [PHP_IMAGE]` | Turn a subproject into an HTTPS emulator of a real API domain (adds it first if needed) |
 | `myDockersDown` | `docker compose down` every project under `~/MyDockers` — handy before shutting down the host |
+| `myDockersRestart` | `down` + `up -d` every **running** project under `~/MyDockers`; stopped projects stay stopped |
+| `myDockersRemove <Project>` | Delete a project for good: containers, network, volumes, its built images, then the whole `~/MyDockers/<Project>` folder (asks you to type the name) |
 | `myDockersHints [Project] [SubProject]` | List all projects, or a cheat sheet of docker commands for one |
 
 `PHP_IMAGE` is any official `php:*-apache` image and defaults to `php:8.4-apache`.

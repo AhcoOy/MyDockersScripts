@@ -1,4 +1,32 @@
-# Release V3.1.0
+# Unreleased
+myDockersRestart and myDockersRemove (2026-09-28)
+
+### myDockersRestart (new command)
+- `myDockersRestart` runs `docker compose down` + `up -d` on every project
+  under `~/MyDockers` that has running containers; stopped projects stay
+  stopped
+- Running projects are found via `docker compose ls`, so compose files in
+  a project subfolder (e.g. `<Project>/docker/compose.yaml`) are covered
+  too, and each project comes back up with the same compose files
+
+### myDockersRemove (new command)
+- `myDockersRemove <Project>` deletes a project for good: containers,
+  network, volumes, the images built for it (also leftovers of services
+  that were dropped from the compose file), then the whole
+  `~/MyDockers/<Project>` folder including `*_src` code and `data/`
+- Shows everything it is about to remove and asks you to type the project
+  name to confirm
+- Pulled base images (phpmyadmin, adminer, php:*, ...) are kept
+- Locked database folders in `data/` are handled: retried after `chmod`,
+  then deleted from inside an `alpine` container; prints the `sudo rm -rf`
+  command if even that fails
+- Refuses folders that are not MyDockers projects (no compose file or
+  `.myDockersTemplate`), and keeps the folder if `docker compose down` fails
+
+### README
+- Both commands added to the commands table
+
+# Release v3.1.0 notes
 HTTPS API emulation — per-project dev CA, myDockersEmulate (2026-08-04)
 
 ### myDockersEmulate (new command)
@@ -43,7 +71,7 @@ HTTPS API emulation — per-project dev CA, myDockersEmulate (2026-08-04)
 - New "Emulating HTTPS APIs" section
 - `myDockersDown` documented (was missing from the commands table)
 
-# Release V3.0.0
+# Release v3.0.0 notes
 Static IPs, hostnames, shared hosts file, SSH between containers (2026-07-21)
 
 ### myDockersCreate
@@ -72,7 +100,7 @@ Static IPs, hostnames, shared hosts file, SSH between containers (2026-07-21)
 - Tested with 4-subproject LAMP (PHP 8.5/8.1/7.2/7.1) and 2-subproject LAPP
   stacks
 
-# Release V2.0.0
+# Release v2.0.0 notes
 MyDockersScripts 2.0 — template sets, PostgreSQL (LAPP) stacks, engine-aware tooling (2026-07-04)
 
 ### Template Sets — LAMP and LAPP
@@ -110,7 +138,7 @@ Adminer, and idempotent initialization SQL.
   (2× PHP on LAPP)
 - Rewritten README covering template sets and both stacks
 
-# Release V1.0.1
+# Release v1.0.1 notes
 MyDockersScripts 1.0.1 — myDockersHints overhaul (2026-07-04)
 
 ### myDockersHints
@@ -123,7 +151,7 @@ MyDockersScripts 1.0.1 — myDockersHints overhaul (2026-07-04)
 - References `myDockersBuild`, `myDockersInitDBs`, and `myDockersAdd` in
   cheat sheet
 
-# Release V1.0.0
+# Release v1.0.0 notes
 MyDockersScripts 1.0 — first public release (2026-07-04)
 
 Shell commands for running multi-PHP LAMP development stacks on Docker:
