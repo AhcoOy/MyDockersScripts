@@ -13,7 +13,7 @@ source "$HOME/MyDockersScripts/myDockersBuild.sh"
 source "$HOME/MyDockersScripts/myDockersInitDBs.sh"
 source "$HOME/MyDockersScripts/myDockersHints.sh"
 
-myDockersCreate myLappPrj php82web 8601 8602 8603 php:8.5-apache LAPP
+myDockersCreate myLappPrj php82web php:8.5-apache LAPP 8601 8602 8603
 
 myDockersAdd myLappPrj php71web php:7.1-apache LAPP
 

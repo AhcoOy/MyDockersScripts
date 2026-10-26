@@ -178,8 +178,7 @@ myDockersEmulate() {
     echo "Done. $SUB_PROJECT now emulates https://$DOMAIN/"
     echo
     echo "Next:"
-    echo "    myDockersBuild $PROJECT"
-    echo "    cd $ROOT && docker compose up -d"
+    echo "    myDockersBuild $PROJECT && cd $ROOT && docker compose up -d"
     echo
     echo "Verify from any other container of the project:"
     echo "    docker exec <container> curl -s https://$DOMAIN/"

@@ -44,9 +44,8 @@ Open a new terminal (or `source ~/.zshrc`) and the commands below are available.
 
 | Command | Purpose |
 |---|---|
-| `myDockersCreate <Project> <SubProject> <HTTP_PORT> <DB_PORT> <ADMIN_PORT> [PHP_IMAGE] [TEMPLATES]` | Create a new project with its first subproject |
-| `myDockersCreate <Project> <SubProject> <HTTP_PORT> [PHP_IMAGE] LAlMP` | Same, for a project using this machine's own MariaDB (no database ports) |
-| `myDockersAdd <Project> <SubProject> [PHP_IMAGE] [TEMPLATE]` | Add another web container to an existing project (HTTP port auto-detected) |
+| `myDockersCreate <Project> <SubProject> [PHP_IMAGE] [TEMPLATES] [HTTP_PORT] [DB_PORT] [ADMIN_PORT]` | Create a new project with its first subproject; leave the ports out to have them picked automatically (see [Ports](#ports)) |
+| `myDockersAdd <Project> <SubProject> [PHP_IMAGE] [TEMPLATE]` | Add another web container to an existing project (next free HTTP port of the project) |
 | `myDockersBuild <Project>` | Build all services, one log per service in `build_logs/` |
 | `myDockersInitDBs <Project>` | Run all `<db>/init/*.sql` (`mariadb`, `postgres`, `hostdb`) and verify every database exists |
 | `myDockersEmulate <Project> <SubProject> <Domain> [PHP_IMAGE]` | Turn a subproject into an HTTPS emulator of a real API domain (adds it first if needed) |
@@ -59,6 +58,42 @@ Open a new terminal (or `source ~/.zshrc`) and the commands below are available.
 Old images (down to PHP 7.1) work too: the Dockerfile template installs
 everything it can and prints `WARNING:` lines for what it can't.
 
+### Ports
+
+Leave the ports out and `myDockersCreate` gives the project the first free
+**port segment** — 10 consecutive ports, starting at 8100: 8100–8109,
+8110–8119, 8120–8129, … A segment is free when no project under
+`~/MyDockers` publishes any of its ports and nothing on this machine listens
+on them (`ss` on Linux, `lsof` on macOS). Inside the segment:
+
+| Port | LAMP / LAPP | LAlMP |
+|---|---|---|
+| first (e.g. 8100) | HTTP of the first subproject | HTTP of the first subproject |
+| +1 | MariaDB / PostgreSQL | next `myDockersAdd` |
+| +2 | phpMyAdmin / Adminer | … |
+| +3 … | next `myDockersAdd` subprojects | … |
+
+```sh
+myDockersCreate myshop ps91 php:8.4-apache          # e.g. 8100, 8101, 8102
+myDockersCreate mylapp shop LAPP                    # next segment, e.g. 8110
+```
+
+Your own ports go last, after `PHP_IMAGE` and `TEMPLATES`, and are checked
+the same way. Give only `HTTP_PORT` and the database / admin ports become
+HTTP+1 and HTTP+2; LAlMP uses `HTTP_PORT` only and ignores the other two:
+
+```sh
+myDockersCreate myshop ps91 php:8.4-apache LAMP 8300 8301 8302
+myDockersCreate myshop ps91 php:8.4-apache LAMP 8300     # same ports
+```
+
+The arguments are recognized by kind (`php…` = image, a number = port,
+anything else = template set), so the old ports-first order keeps working.
+
+`myDockersAdd` continues with the project's highest port + 1 and skips any
+port that is already in use. Start the segment search elsewhere with
+`MYDOCKERS_PORT_START=9000`.
+
 ## Template sets
 
 `TEMPLATES` names a folder under [templates/](templates/) and defaults to `LAMP`:
@@ -70,7 +105,7 @@ everything it can and prints `WARNING:` lines for what it can't.
 | `LAlMP` | Apache + PHP, **this machine's own MariaDB** (no database container) — see [Use case 3](#use-case-3-with-the-hosts-own-mariadb) |
 
 ```sh
-myDockersCreate mylapp shop 8701 8702 8703 php:8.4-apache LAPP
+myDockersCreate mylapp shop php:8.4-apache LAPP
 ```
 
 The chosen set is stored in the project's `.myDockersTemplate` file, and
@@ -94,7 +129,7 @@ Four PrestaShop versions on one LAMP stack, MariaDB + phpMyAdmin
 ```sh
 # create the project with its first subproject
 # (HTTP, database and phpMyAdmin ports)
-myDockersCreate myLampPrj ps91 8611 8612 8613 php:8.5-apache
+myDockersCreate myLampPrj ps91 php:8.5-apache LAMP 8611 8612 8613
 
 # add more subprojects, each with its own PHP version
 myDockersAdd myLampPrj ps8_last    php:8.1-apache
@@ -130,7 +165,7 @@ The same flow on a LAPP stack — just name the template set
 ```sh
 # create the project with its first subproject
 # (HTTP, database and Adminer ports)
-myDockersCreate myLappPrj php82web 8601 8602 8603 php:8.5-apache LAPP
+myDockersCreate myLappPrj php82web php:8.5-apache LAPP 8601 8602 8603
 
 # add more subprojects, each with its own PHP version
 myDockersAdd myLappPrj php71web php:7.1-apache LAPP
@@ -167,8 +202,8 @@ container: the web containers use the MariaDB server running on this machine,
 shared by every LAlMP project (and by the host's own phpMyAdmin).
 
 ```sh
-# create the project — HTTP port only, there are no database ports
-myDockersCreate myShop ps91 8701 php:8.4-apache LAlMP
+# create the project — HTTP port picked automatically, no database ports
+myDockersCreate myShop ps91 php:8.4-apache LAlMP
 
 # add more subprojects as usual
 myDockersAdd myShop ps8 php:8.1-apache
@@ -217,6 +252,7 @@ On macOS (Docker Desktop) a default local MariaDB on `127.0.0.1` works as is.
 ```
 ~/MyDockers/myshop/
 ├── docker-compose.yml
+├── credentials.txt                # every login of the project, one block per subproject
 ├── .gitignore                     # data/ and *_src/ ignored
 ├── build_logs/                    # one log per service + summary, per build run
 ├── data/mysql/                    # MariaDB data (ignored by git)
@@ -244,6 +280,11 @@ Naming, for a project `myshop` with subproject `ps91` on `php:8.5-apache`:
 - container: `myshop_ps91_web` (db: `myshop_db`, phpMyAdmin: `myshop_phpmyadmin`)
 - database / db user / db password: `php85apache_ps91`
 - the web container gets `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` as environment variables
+- `credentials.txt` collects all of it — database server and ports, root /
+  project user, admin UI URL, SSH, and per subproject its database = user =
+  password — so you (or an AI assistant working in the project) find every
+  login in one place. `myDockersAdd` appends each new subproject; a
+  `credentials.txt` you wrote yourself is never touched
 
 ### Network: static IPs and hostnames
 

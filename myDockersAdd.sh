@@ -120,7 +120,16 @@ myDockersAdd() {
         return 1
     fi
 
-    local HTTP_PORT=$((LAST_PORT + 1))
+    # skip ports another project publishes or something on this machine
+    # listens on
+    local HTTP_PORT=$((LAST_PORT + 1)) used
+    used=$(_myDockersUsedPorts)
+    while printf '%s\n' "$used" | grep -qx "$HTTP_PORT"; do
+        HTTP_PORT=$((HTTP_PORT + 1))
+    done
+    if [ "$HTTP_PORT" -ne $((LAST_PORT + 1)) ]; then
+        echo "NOTE: port $((LAST_PORT + 1)) is in use, taking $HTTP_PORT instead"
+    fi
 
     # Static-IP network: reuse the project's subnet; older projects created
     # without one get the networks block prepended (existing services keep
@@ -194,13 +203,15 @@ myDockersAdd() {
 
     myDockersInitDBs "$PROJECT"
 
+    _myDockersWriteCredentials "$ROOT" "$SUB_PROJECT" "$DB_NAME" "$HTTP_PORT"
+
     myDockersCommit "$ROOT" "myDockersAdd $SUB_PROJECT ($PHP_IMAGE, $TEMPLATE)"
 
     echo
     echo "Done."
     echo
-    echo "Next:"
-    echo "    myDockersBuild $PROJECT"
-    echo "    cd $ROOT && docker compose up -d"
-    echo "    myDockersInitDBs $PROJECT"
+    echo "Database: $DB_NAME, user = password = $DB_NAME   (all logins: $ROOT/credentials.txt)"
+    echo
+    echo "Next (build, start, create the databases):"
+    echo "    myDockersBuild $PROJECT && cd $ROOT && docker compose up -d && myDockersInitDBs $PROJECT"
 }

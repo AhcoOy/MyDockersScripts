@@ -14,7 +14,7 @@ source "$HOME/MyDockersScripts/myDockersBuild.sh"
 source "$HOME/MyDockersScripts/myDockersInitDBs.sh"
 source "$HOME/MyDockersScripts/myDockersHints.sh"
 
-myDockersCreate myLampPrj ps91 8611 8612 8613 php:8.5-apache
+myDockersCreate myLampPrj ps91 php:8.5-apache LAMP 8611 8612 8613
 
 myDockersAdd myLampPrj ps8_last php:8.1-apache
 myDockersAdd myLampPrj ps_1_7_last php:7.2-apache

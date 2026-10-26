@@ -61,7 +61,7 @@ myDockersHints() {
         if [ -z "$found" ]; then
             echo
             echo "No projects found. Create one:"
-            echo "    myDockersCreate <Project> <SubProject> <HTTP_PORT> <MYSQL_PORT> <PMA_PORT> [PHP_IMAGE] [TEMPLATES]"
+            echo "    myDockersCreate <Project> <SubProject> [PHP_IMAGE] [TEMPLATES]   # ports picked automatically"
         fi
 
         echo
