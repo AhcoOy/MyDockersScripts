@@ -1,0 +1,10 @@
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: __NET_PREFIX__.0/24
+
+# LAlMP: no database container — 'db' is the HOST's MariaDB, shared by every
+# LAlMP project. mounted_shared_etc/hosts points 'db' at Docker's host gateway;
+# databases and users are created by myDockersInitDBs from hostdb/init/.
+services:

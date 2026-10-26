@@ -45,9 +45,10 @@ Open a new terminal (or `source ~/.zshrc`) and the commands below are available.
 | Command | Purpose |
 |---|---|
 | `myDockersCreate <Project> <SubProject> <HTTP_PORT> <DB_PORT> <ADMIN_PORT> [PHP_IMAGE] [TEMPLATES]` | Create a new project with its first subproject |
+| `myDockersCreate <Project> <SubProject> <HTTP_PORT> [PHP_IMAGE] LAlMP` | Same, for a project using this machine's own MariaDB (no database ports) |
 | `myDockersAdd <Project> <SubProject> [PHP_IMAGE] [TEMPLATE]` | Add another web container to an existing project (HTTP port auto-detected) |
 | `myDockersBuild <Project>` | Build all services, one log per service in `build_logs/` |
-| `myDockersInitDBs <Project>` | Run all `mariadb/init/*.sql` and verify every database exists |
+| `myDockersInitDBs <Project>` | Run all `<db>/init/*.sql` (`mariadb`, `postgres`, `hostdb`) and verify every database exists |
 | `myDockersEmulate <Project> <SubProject> <Domain> [PHP_IMAGE]` | Turn a subproject into an HTTPS emulator of a real API domain (adds it first if needed) |
 | `myDockersDown` | `docker compose down` every project under `~/MyDockers` — handy before shutting down the host |
 | `myDockersRestart` | `down` + `up -d` every **running** project under `~/MyDockers`; stopped projects stay stopped |
@@ -66,6 +67,7 @@ everything it can and prints `WARNING:` lines for what it can't.
 |---|---|
 | `LAMP` | Apache + PHP, **MariaDB**, phpMyAdmin |
 | `LAPP` | Apache + PHP, **PostgreSQL** (container `<Project>_postgres_db`), Adminer |
+| `LAlMP` | Apache + PHP, **this machine's own MariaDB** (no database container) — see [Use case 3](#use-case-3-with-the-hosts-own-mariadb) |
 
 ```sh
 myDockersCreate mylapp shop 8701 8702 8703 php:8.4-apache LAPP
@@ -157,6 +159,58 @@ Then:
 - databases: one per subproject, e.g. `php85apache_php82web` /
   `php71apache_php71web` (user and password are the same as the name)
 - put your code into `~/MyDockers/myLappPrj/<php_id>_<subproject>_src/`
+
+## Use case 3, with the host's own MariaDB
+
+`LAlMP` (Linux, Apache, **local** MariaDB, PHP) has no database or phpMyAdmin
+container: the web containers use the MariaDB server running on this machine,
+shared by every LAlMP project (and by the host's own phpMyAdmin).
+
+```sh
+# create the project — HTTP port only, there are no database ports
+myDockersCreate myShop ps91 8701 php:8.4-apache LAlMP
+
+# add more subprojects as usual
+myDockersAdd myShop ps8 php:8.1-apache
+
+myDockersBuild myShop
+cd "$HOME/MyDockers/myShop" && docker compose up -d
+```
+
+How it fits together:
+
+- `db` in the project's hosts file points at Docker's host gateway —
+  `172.17.0.1` (docker0) on a native Docker Engine, the Docker Desktop
+  gateway on macOS — so applications keep using `DB_HOST=db`
+- `myDockersCreate` / `myDockersAdd` create the databases right away
+  (`hostdb/init/*.sql`, rerun any time with `myDockersInitDBs myShop`). They
+  log in as the MariaDB admin from a `[client]` section in `~/.my.cnf`, or ask
+  for the user and password (kept in a temp file for that one command)
+- names carry the project, because the server is shared:
+  `myshop_php84apache_ps91` is database = user = password. Users exist for
+  `'<project subnet>.%'` (the containers), `'127.0.0.1'` and `'localhost'`,
+  with grants on their own databases only; the project user `myShop` /
+  `myShop` sees all of the project's databases (host phpMyAdmin login)
+- `myDockersRemove myShop` lists the project's databases and users and drops
+  them only when you answer `y`
+
+One-time setup on a native Linux Docker Engine — MariaDB must also listen on
+docker0, and start after Docker (which creates that address).
+`myDockersInitDBs` tests the path from a container and prints this when
+it fails:
+
+```sh
+# add 172.17.0.1 to bind-address (comma-separated list, MariaDB 10.11+);
+# if z99-docker-bind.cnf already exists, append ,172.17.0.1 to its line instead
+printf '[mysqld]\nbind-address = 127.0.0.1,172.17.0.1\n' \
+    | sudo tee /etc/mysql/mariadb.conf.d/z99-docker-bind.cnf
+sudo mkdir -p /etc/systemd/system/mariadb.service.d
+printf '[Unit]\nAfter=docker.service\n' \
+    | sudo tee /etc/systemd/system/mariadb.service.d/z99-after-docker.conf
+sudo systemctl daemon-reload && sudo systemctl restart mariadb
+```
+
+On macOS (Docker Desktop) a default local MariaDB on `127.0.0.1` works as is.
 
 ## Generated project layout
 

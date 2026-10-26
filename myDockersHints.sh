@@ -121,11 +121,20 @@ myDockersHints() {
     fi
 
     # which db / admin containers does this project actually have?
-    local HAS_MARIADB="" HAS_POSTGRES="" HAS_PMA="" HAS_ADMINER=""
+    local HAS_MARIADB="" HAS_POSTGRES="" HAS_PMA="" HAS_ADMINER="" HAS_HOSTDB=""
     grep -q "container_name: ${P}_db\$" "$COMPOSE"          && HAS_MARIADB=1
     grep -q "container_name: ${P}_postgres_db\$" "$COMPOSE" && HAS_POSTGRES=1
     grep -q "container_name: ${P}_phpmyadmin\$" "$COMPOSE"  && HAS_PMA=1
     grep -q "container_name: ${P}_adminer\$" "$COMPOSE"     && HAS_ADMINER=1
+    [ -d "$HOME/MyDockers/$P/hostdb/init" ]                 && HAS_HOSTDB=1
+
+    # LAlMP: db = user = password of the web container the hints point at
+    local HOSTDB_NAME=""
+    if [ -n "$HAS_HOSTDB" ]; then
+        HOSTDB_NAME=$(awk -v w="$WEB" '$1 == "container_name:" { f = ($2 == w) }
+                                     f && $1 == "DB_NAME:" { gsub(/"/, "", $2); print $2; exit }' "$COMPOSE")
+        HOSTDB_NAME="${HOSTDB_NAME:-<DB_NAME>}"
+    fi
 
     cat <<EOF
 
@@ -173,6 +182,12 @@ EOF
 
 # MariaDB
 docker exec -it ${P}_db mariadb -uroot -proot
+EOF
+
+    [ -n "$HAS_HOSTDB" ] && cat <<EOF
+
+# MariaDB — this machine's own server (shared), from the web container
+docker exec -it $WEB mariadb --skip-ssl -h db -u ${HOSTDB_NAME} -p${HOSTDB_NAME} ${HOSTDB_NAME}
 EOF
 
     [ -n "$HAS_POSTGRES" ] && cat <<EOF
@@ -256,6 +271,22 @@ docker exec -it ${P}_db mariadb -uroot -proot -e "SHOW VARIABLES;"
 # File per table
 docker exec -it ${P}_db mariadb -uroot -proot \\
 -e "SHOW VARIABLES LIKE 'innodb_file_per_table';"
+EOF
+
+    [ -n "$HAS_HOSTDB" ] && cat <<EOF
+
+--------------------------------------------------------
+MariaDB (this machine's own server, shared by all LAlMP projects)
+--------------------------------------------------------
+
+# Project user — sees every subproject database (password: ${P})
+mariadb --skip-ssl -h 127.0.0.1 -u ${P} -p${P}
+
+# This subproject's database (db = user = password)
+mariadb --skip-ssl -h 127.0.0.1 -u ${HOSTDB_NAME} -p${HOSTDB_NAME} ${HOSTDB_NAME}
+
+# phpMyAdmin: the host's own, login ${P} / ${P}
+# Containers reach the server as 'db' (mounted_shared_etc/hosts)
 EOF
 
     if [ -n "$HAS_POSTGRES" ]; then

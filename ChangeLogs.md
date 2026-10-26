@@ -1,3 +1,43 @@
+# Release v3.3.0 notes
+LAlMP template set — web containers on the host's own MariaDB (2026-10-26)
+
+### Templates
+- New `LAlMP` set (Linux, Apache, local MariaDB, PHP): no database or
+  phpMyAdmin container — the web containers use this machine's MariaDB,
+  shared by every LAlMP project and by the host's own phpMyAdmin
+- `db` in the generated hosts file points at Docker's host gateway (probed:
+  `172.17.0.1` on a native Docker Engine, the Docker Desktop gateway on
+  macOS), so applications keep `DB_HOST=db`
+- `hostdb/init.sql`: database = user = password named
+  `<project>_<php_id>_<subproject>` (lowercase — the server is shared, so
+  the project is part of the name); users for the project subnet
+  (`'172.30.N.%'`), `'127.0.0.1'` and `'localhost'`, grants scoped to their
+  own database, never `*.*`
+
+### myDockersCreate
+- Short form for LAlMP, without database ports:
+  `myDockersCreate <Project> <SubProject> <HTTP_PORT> [PHP_IMAGE] LAlMP`
+- LAlMP projects get their database created right away
+
+### myDockersInitDBs
+- New `hostdb` engine: logs in as the MariaDB admin from `~/.my.cnf`, or asks
+  for user and password (kept in a mode-600 temp file for that one command)
+- Tests from a throwaway container that the host MariaDB is reachable, and
+  prints the `bind-address` / systemd ordering fix when it is not
+
+### myDockersRemove
+- LAlMP projects: lists their databases and users on the host MariaDB and
+  drops them only on an explicit `y`; otherwise (or on failure) prints the
+  DROP statements
+
+### myDockersHints
+- Host-MariaDB hints (from the web container and from this machine) for
+  LAlMP projects
+
+### README
+- New "Use case 3, with the host's own MariaDB" section with the one-time
+  host setup
+
 # Release v3.2.0 notes
 myDockersRestart, myDockersRemove, PHP_IMAGE validation (2026-10-26)
 

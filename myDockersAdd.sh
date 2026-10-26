@@ -85,6 +85,10 @@ myDockersAdd() {
         return 1
     fi
 
+    local DB_NAME
+    DB_NAME=$(_myDockersDbName "$TPL" "$PROJECT" "$PHP_ID" "$SUB_PROJECT")
+    _myDockersCheckDbName "$DB_NAME" || return 1
+
     echo "$TEMPLATE" > "$ROOT/.myDockersTemplate"
 
     if [ ! -f "$COMPOSE" ]; then
@@ -179,7 +183,7 @@ myDockersAdd() {
     for sql in $(find "$TPL" -maxdepth 2 -name init.sql 2>/dev/null); do
         initdir="$ROOT/$(basename "$(dirname "$sql")")/init"
         mkdir -p "$initdir"
-        renderTemplate "$sql" > "$initdir/init-${PHP_ID}_${SUB_PROJECT}.sql"
+        renderTemplate "$sql" > "$initdir/init-${DB_NAME}.sql"
     done
 
     renderTemplate "$TPL/web-service.yml" >> "$COMPOSE"
