@@ -1,5 +1,5 @@
-# Unreleased
-myDockersRestart and myDockersRemove (2026-09-28)
+# Release v3.2.0 notes
+myDockersRestart, myDockersRemove, PHP_IMAGE validation (2026-10-26)
 
 ### myDockersRestart (new command)
 - `myDockersRestart` runs `docker compose down` + `up -d` on every project
